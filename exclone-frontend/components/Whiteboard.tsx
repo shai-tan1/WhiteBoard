@@ -23,8 +23,15 @@ type Op =
       after: Record<string, unknown>;
     };
 
-const PENS = ['#1f2937', '#ef4444', '#2f6bff', '#22a06b', '#f59e0b', '#8b5cf6'];
+const INK_LIGHT = '#1f2937'; // near-black ink on a light board
+const INK_DARK = '#e8eaed'; // light ink on a dark board
+// The neutral ink (slot 0) adapts to the board; the rest read on both.
+const PENS = [INK_LIGHT, '#ef4444', '#2f6bff', '#22a06b', '#f59e0b', '#8b5cf6'];
+const paletteFor = (theme: 'light' | 'dark') =>
+  theme === 'dark' ? [INK_DARK, ...PENS.slice(1)] : PENS;
 const HIGHLIGHT = 'rgba(253, 224, 71, 0.45)';
+
+type Theme = 'light' | 'dark';
 
 const genId = () =>
   `obj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -51,6 +58,7 @@ export default function Whiteboard() {
   const [canRedo, setCanRedo] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>('light');
 
   const toolRef = useRef(tool);
   const colorRef = useRef(penColor);
@@ -72,6 +80,36 @@ export default function Whiteboard() {
 
   const emit = (event: string, payload?: unknown) =>
     socketRef.current?.emit(event, payload);
+
+  // ---- theme: load saved / system preference, then persist ----
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('exclone-theme') as Theme | null;
+      if (saved === 'light' || saved === 'dark') setTheme(saved);
+      else if (window.matchMedia?.('(prefers-color-scheme: dark)').matches)
+        setTheme('dark');
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem('exclone-theme', theme);
+    } catch {
+      /* ignore */
+    }
+    // if the active pen is the *other* theme's neutral ink, swap it so the
+    // neutral pencil keeps drawing in a visible color after toggling.
+    setPenColor((c) =>
+      c === INK_LIGHT && theme === 'dark'
+        ? INK_DARK
+        : c === INK_DARK && theme === 'light'
+          ? INK_LIGHT
+          : c,
+    );
+  }, [theme]);
+
+  const palette = paletteFor(theme);
 
   const refreshHistory = () => {
     setCanUndo(undoStack.current.length > 0);
@@ -437,7 +475,7 @@ export default function Whiteboard() {
   }, []);
 
   return (
-    <div className="app">
+    <div className={`app ${theme}`}>
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark" />
@@ -454,6 +492,15 @@ export default function Whiteboard() {
           <span className="who">{me.name}</span>
           <span className={`live-dot${connected ? ' on' : ''}`} title={connected ? 'Connected' : 'Offline'} />
         </div>
+
+        <button
+          className="icon-btn"
+          title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+          aria-label="Toggle theme"
+          onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+        >
+          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+        </button>
 
         <div className="settings-wrap">
           <button
@@ -503,7 +550,7 @@ export default function Whiteboard() {
 
           <span className="divider" />
 
-          {PENS.map((c) => {
+          {palette.map((c) => {
             const active = tool === 'pen' && penColor === c;
             return (
               <button
@@ -630,5 +677,14 @@ const GearIcon = () => (
   <svg viewBox="0 0 24 24" {...stroke}>
     <circle cx="12" cy="12" r="3" />
     <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" />
+  </svg>
+);
+const MoonIcon = () => (
+  <svg viewBox="0 0 24 24" {...stroke}><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" /></svg>
+);
+const SunIcon = () => (
+  <svg viewBox="0 0 24 24" {...stroke}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19" />
   </svg>
 );
